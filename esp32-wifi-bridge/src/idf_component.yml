@@ -1,0 +1,5 @@
+# ESP-IDF 6.x moved esp-mqtt out of the core tree into a managed component.
+# The IDF Component Manager fetches this from components.espressif.com at build
+# time (needs internet once; then it is cached under managed_components/).
+dependencies:
+  espressif/mqtt: "^1.0.0"

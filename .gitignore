@@ -1,0 +1,42 @@
+# ---- Credentials ----------------------------------------------------------
+# The ESP32 bridge reads Wi-Fi / MQTT / OTA credentials from src/secrets.h.
+# Only the template (secrets.example.h) is committed.
+secrets.h
+
+# ---- Private working files (never pushed) ---------------------------------
+_private/
+Claude deleteme.md
+
+# ---- PlatformIO / ESP-IDF --------------------------------------------------
+.pio/
+managed_components/
+sdkconfig
+sdkconfig.*
+!sdkconfig.defaults
+!sdkconfig.*.defaults
+
+# ---- Code Composer Studio / Eclipse CDT build output -----------------------
+Debug/
+Release/
+.settings/
+*.obj
+*.d
+*.map
+*.out
+
+# ---- Host-side test build output -------------------------------------------
+tests/*.exe
+tests/*.obj
+tests/*.log
+tests/esp_parsers.inc
+
+# ---- Video masters (upload the compressed MP4 to GitHub instead) -----------
+media/video/raw/
+
+# ---- AI assistant working dirs (not part of the project) -------------------
+.claude/
+
+# ---- Editor / OS ------------------------------------------------------------
+.vscode/
+.DS_Store
+Thumbs.db

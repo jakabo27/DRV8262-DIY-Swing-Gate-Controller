@@ -1,0 +1,11 @@
+# ESP32-C3 XIAO, 4 MB flash. Two OTA app slots so the flasher can update itself
+# over Wi-Fi (POST /ota -> esp_ota_write -> reboot). ~1.94 MB per slot; the build
+# is ~1.0 MB, so there is plenty of headroom. Superseded huge_app.csv (single
+# 3 MB app). Changing the table requires ONE more USB flash to take effect.
+#
+# Name,     Type, SubType,  Offset,    Size
+nvs,        data, nvs,      0x9000,    0x5000
+otadata,    data, ota,      0xE000,    0x2000
+ota_0,      app,  ota_0,    0x10000,   0x1F0000
+ota_1,      app,  ota_1,    0x200000,  0x1F0000
+coredump,   data, coredump, 0x3F0000,  0x10000

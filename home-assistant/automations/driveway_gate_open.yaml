@@ -1,0 +1,229 @@
+# =====================================================================
+# Driveway Gate - Open
+#
+# Opens the gate for a household member arriving by car, and for a car
+# leaving from inside the property. Closing is handled separately by
+# driveway_gate_auto_close.yaml.
+#
+# The one rule everything here is built around: the gate firmware treats
+# ANY command received while the gate is moving as "stop now, mid-travel"
+# (gate_fsm.c, tickOpening/tickClosing). So this automation never presses a
+# button while binary_sensor.<gate>_moving is on - it waits for the gate to
+# stop first.
+#
+# Placeholders to replace with your own entities:
+#   device_tracker.person_a_phone / person_b_phone  - Companion-app GPS trackers
+#   person.person_a / person.person_b
+#   binary_sensor.person_a_in_car                   - e.g. a template that is on while
+#                                                     the phone is connected to the car's
+#                                                     Bluetooth (Android Companion app
+#                                                     bluetooth_connection sensor)
+#   binary_sensor.person_a_phone_android_auto       - Android Companion app sensor
+#   sensor.person_b_phone_activity                  - iOS Companion app activity sensor
+#   binary_sensor.driveway_middle_car_occupancy     - Frigate zone between house and gate
+#   binary_sensor.driveway_exit_car_occupancy       - Frigate zone covering the gate's swing arc
+#   cover.garage_door
+#
+# Prerequisites (create in the UI):
+#   zone.gate_approach     passive zone, ~900 m radius, centered on home. At
+#                          typical street speeds that is 40-130 s of warning,
+#                          enough for a ~14 s gate to be fully open on arrival.
+#   zone.in_neighborhood   a smaller (~400 m) zone - re-opens the gate if the
+#                          first open timed out while you were stopped nearby.
+#
+# The binary_sensor/button/event entities named msp430_gate_controller_* are
+# the ones the ESP32 bridge creates through MQTT discovery.
+# =====================================================================
+alias: Driveway Gate - Open
+description: >-
+  Opens the gate for a household member arriving by car (passive ~900 m Gate
+  Approach zone, plus a smaller neighborhood zone as a re-open backup) and for
+  a car leaving from inside (Frigate driveway zones). Opens the garage once
+  the arriving car is seen inside (camera or photo beam). Never presses a
+  button while the gate is moving. Closing is handled by "Driveway Gate -
+  Auto Close".
+mode: single
+max_exceeded: silent
+triggers:
+  # Phone GPS trackers rather than person entities: a person entity can include
+  # other devices (a work phone, a tablet) that don't travel with the car.
+  - trigger: zone
+    entity_id: device_tracker.person_a_phone
+    zone: zone.gate_approach
+    event: enter
+    id: Arrive_A
+  - trigger: zone
+    entity_id: device_tracker.person_a_phone
+    zone: zone.in_neighborhood
+    event: enter
+    id: Arrive_A
+  - trigger: zone
+    entity_id: device_tracker.person_b_phone
+    zone: zone.gate_approach
+    event: enter
+    id: Arrive_B
+  - trigger: zone
+    entity_id: device_tracker.person_b_phone
+    zone: zone.in_neighborhood
+    event: enter
+    id: Arrive_B
+  # From "off" only, so a Frigate restart (unavailable -> on) can't open the gate.
+  - trigger: state
+    entity_id:
+      - binary_sensor.driveway_middle_car_occupancy
+      - binary_sensor.driveway_exit_car_occupancy
+    from: "off"
+    to: "on"
+    id: Exit_Car
+conditions:
+  - alias: Gate controller not in fault lockout
+    condition: state
+    entity_id: binary_sensor.msp430_gate_controller_gate_lockout
+    state: "off"
+actions:
+  - choose:
+      # ---------------- Arriving from outside ----------------
+      - alias: Arriving from outside
+        conditions:
+          - condition: trigger
+            id:
+              - Arrive_A
+              - Arrive_B
+          # Position comes from the limit switches, not the cover entity, so a
+          # gate stopped part-way still reads as "not open".
+          - alias: Gate isn't already fully open
+            condition: state
+            entity_id: binary_sensor.msp430_gate_controller_gate_open_limit
+            state: "off"
+          - alias: Gate isn't already opening
+            condition: not
+            conditions:
+              - condition: state
+                entity_id: cover.msp430_gate_controller_gate
+                state: opening
+          - alias: No car just drove in (late GPS update after already arriving)
+            condition: state
+            entity_id: binary_sensor.driveway_middle_car_occupancy
+            state: "off"
+            for: "00:02:00"
+          - alias: The arriving person is driving, not jogging or walking the dog
+            condition: or
+            conditions:
+              - alias: Person A - phone connected to the car
+                condition: and
+                conditions:
+                  - condition: trigger
+                    id: Arrive_A
+                  - condition: or
+                    conditions:
+                      - condition: state
+                        entity_id: binary_sensor.person_a_in_car
+                        state: "on"
+                      - condition: state
+                        entity_id: binary_sensor.person_a_phone_android_auto
+                        state: "on"
+              - alias: Person B - iPhone activity is not on foot or on a bike
+                condition: and
+                conditions:
+                  - condition: trigger
+                    id: Arrive_B
+                  - condition: not
+                    conditions:
+                      - condition: state
+                        entity_id: sensor.person_b_phone_activity
+                        state:
+                          - Walking
+                          - Running
+                          - Cycling
+        sequence:
+          - alias: If the gate is closing, let it finish (a press now would just stop it)
+            if:
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_moving
+                state: "on"
+            then:
+              - wait_for_trigger:
+                  - trigger: state
+                    entity_id: binary_sensor.msp430_gate_controller_gate_moving
+                    to: "off"
+                timeout: "00:00:30"
+                continue_on_timeout: false
+          - alias: GUARD - gate stopped and still not open
+            condition: and
+            conditions:
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_moving
+                state: "off"
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_open_limit
+                state: "off"
+          - alias: Open the gate
+            action: button.press
+            target:
+              entity_id: button.msp430_gate_controller_gate_open_button
+          - alias: Wait for the arriving car inside (camera or photo beam), max 3 min
+            wait_for_trigger:
+              - trigger: state
+                entity_id:
+                  - binary_sensor.driveway_exit_car_occupancy
+                  - binary_sensor.driveway_middle_car_occupancy
+                from: "off"
+                to: "on"
+              - trigger: state
+                entity_id: event.msp430_gate_controller_gate_beam_activity
+                not_from:
+                  - unavailable
+                  - unknown
+            timeout: "00:03:00"
+            continue_on_timeout: false
+          - alias: Only a car counts (ignore a person or dog in the beam)
+            condition: or
+            conditions:
+              - condition: state
+                entity_id: event.msp430_gate_controller_gate_beam_activity
+                attribute: event_type
+                state: vehicle_pass
+              - condition: state
+                entity_id: binary_sensor.driveway_exit_car_occupancy
+                state: "on"
+              - condition: state
+                entity_id: binary_sensor.driveway_middle_car_occupancy
+                state: "on"
+          - alias: Open the garage
+            action: cover.open_cover
+            target:
+              entity_id: cover.garage_door
+
+      # ---------------- Car leaving from inside ----------------
+      - alias: Car leaving from inside
+        conditions:
+          - condition: trigger
+            id: Exit_Car
+          - alias: >-
+              GUARD - gate has been stopped for 30 s and isn't fully open (so a
+              car that just came in can't re-open it while it closes)
+            condition: state
+            entity_id: binary_sensor.msp430_gate_controller_gate_moving
+            state: "off"
+            for: "00:00:30"
+          - condition: state
+            entity_id: binary_sensor.msp430_gate_controller_gate_open_limit
+            state: "off"
+          - alias: Someone has been home at least 10 min (it's a departure, not an arrival)
+            condition: or
+            conditions:
+              - condition: state
+                entity_id: person.person_a
+                state: home
+                for: "00:10:00"
+              - condition: state
+                entity_id: person.person_b
+                state: home
+                for: "00:10:00"
+        sequence:
+          - alias: Open the gate
+            action: button.press
+            target:
+              entity_id: button.msp430_gate_controller_gate_open_button
+          - alias: Absorb camera flicker while the car drives out
+            delay: "00:00:20"

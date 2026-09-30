@@ -1,0 +1,250 @@
+# =====================================================================
+# Driveway Gate - Auto Close
+#
+# Closes the gate as soon as it isn't needed:
+#   - the photo beam classified a vehicle_pass (then a 10 s wait so the car
+#     clears the swing arc - a camera can't see the gate end of the driveway
+#     at night, the beam can), or
+#   - the camera zone over the swing arc went busy and then clear, or
+#   - it has been open 3+ minutes and nobody is actively driving in, or
+#   - a hard 10-minute cap.
+#
+# Every close requires, right before the button press: gate stopped, photo
+# beam clear for 5 s, camera zone clear for 8 s, hold-open off, no lockout.
+# The gate firmware is still the last line of defense - it refuses CLOSE while
+# the beam is broken and reverses on a beam break or over-current while
+# closing - but this automation shouldn't ever lean on that.
+#
+# Placeholders to replace with your own entities: see driveway_gate_open.yaml,
+# plus:
+#   binary_sensor.driveway_exit_all_occupancy   - Frigate zone over the swing arc,
+#                                                 any object type (car, person, dog)
+#   input_boolean.driveway_gate_hold_open       - "keep it open" toggle for parties,
+#                                                 deliveries, etc. Resets itself when
+#                                                 the gate next reaches the closed limit.
+# =====================================================================
+alias: Driveway Gate - Auto Close
+description: >-
+  Closes the gate as soon as it isn't needed. A car went through (beam
+  vehicle_pass, then a 10 s swing-arc wait; or the camera's gate zone
+  cleared), or it's been open 3+ min with nobody driving in. Always requires
+  the gate stopped, beam clear and gate zone clear. Hard cap: 10 min. The
+  hold-open toggle pauses it and resets itself when the gate closes. Position
+  comes from the limit switches, so a gate stopped part-way still counts as
+  open.
+mode: single
+max_exceeded: silent
+triggers:
+  - alias: Beam activity event (checked for vehicle_pass below)
+    trigger: state
+    entity_id: event.msp430_gate_controller_gate_beam_activity
+    not_from:
+      - unavailable
+      - unknown
+    id: Beam_Event
+  - alias: Something passed through the gate zone and it's now clear
+    trigger: state
+    entity_id: binary_sensor.driveway_exit_all_occupancy
+    from: "on"
+    to: "off"
+    for: "00:00:08"
+    id: Car_Through
+  # Timeout re-checks are all event-driven (no time_pattern polling), so the
+  # automation traces stay readable.
+  - trigger: state
+    entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+    to: "off"
+    for: "00:03:00"
+    id: Timeout
+  - trigger: state
+    entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+    to: "off"
+    for: "00:05:00"
+    id: Timeout
+  - alias: Retry once an approaching driver is home or has left the area
+    trigger: state
+    entity_id:
+      - person.person_a
+      - person.person_b
+    to: home
+    for: "00:00:30"
+    id: Timeout
+  - trigger: zone
+    entity_id:
+      - device_tracker.person_a_phone
+      - device_tracker.person_b_phone
+    zone: zone.gate_approach
+    event: leave
+    id: Timeout
+  - alias: Hard cap - open 10 min
+    trigger: state
+    entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+    to: "off"
+    for: "00:10:00"
+    id: Cap_10m
+  - alias: Hold-open was turned off
+    trigger: state
+    entity_id: input_boolean.driveway_gate_hold_open
+    from: "on"
+    to: "off"
+    id: Timeout
+  - alias: Gate reached the closed limit, so reset hold-open
+    trigger: state
+    entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+    to: "on"
+    id: Gate_Closed
+actions:
+  - choose:
+      - alias: Gate closed, so turn off hold-open
+        conditions:
+          - condition: trigger
+            id: Gate_Closed
+          - condition: state
+            entity_id: input_boolean.driveway_gate_hold_open
+            state: "on"
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.driveway_gate_hold_open
+
+      - alias: Close the gate if it's safe
+        conditions:
+          - condition: trigger
+            id:
+              - Beam_Event
+              - Car_Through
+              - Timeout
+              - Cap_10m
+          - alias: Why are we closing?
+            condition: or
+            conditions:
+              - alias: Beam says a vehicle went through
+                condition: and
+                conditions:
+                  - condition: trigger
+                    id: Beam_Event
+                  - condition: state
+                    entity_id: event.msp430_gate_controller_gate_beam_activity
+                    attribute: event_type
+                    state: vehicle_pass
+              - condition: trigger
+                id: Car_Through
+              - alias: Open 3+ min and nobody is driving in right now
+                condition: and
+                conditions:
+                  - condition: trigger
+                    id: Timeout
+                  - condition: state
+                    entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+                    state: "off"
+                    for: "00:03:00"
+                  - alias: Person A isn't driving in (inside the approach zone, not home, in the car)
+                    condition: not
+                    conditions:
+                      - condition: and
+                        conditions:
+                          - condition: zone
+                            entity_id: device_tracker.person_a_phone
+                            zone: zone.gate_approach
+                          - condition: not
+                            conditions:
+                              - condition: state
+                                entity_id: person.person_a
+                                state: home
+                          - condition: or
+                            conditions:
+                              - condition: state
+                                entity_id: binary_sensor.person_a_in_car
+                                state: "on"
+                              - condition: state
+                                entity_id: binary_sensor.person_a_phone_android_auto
+                                state: "on"
+                  - alias: Person B isn't driving in (inside the approach zone, not home, activity Automotive)
+                    condition: not
+                    conditions:
+                      - condition: and
+                        conditions:
+                          - condition: zone
+                            entity_id: device_tracker.person_b_phone
+                            zone: zone.gate_approach
+                          - condition: not
+                            conditions:
+                              - condition: state
+                                entity_id: person.person_b
+                                state: home
+                          - condition: state
+                            entity_id: sensor.person_b_phone_activity
+                            state: Automotive
+              - condition: trigger
+                id: Cap_10m
+          - alias: Hold-open is off
+            condition: state
+            entity_id: input_boolean.driveway_gate_hold_open
+            state: "off"
+          - alias: Gate not fully closed
+            condition: state
+            entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+            state: "off"
+          - alias: GUARD - gate stopped (fully open or stopped part-way) for 3 s
+            condition: state
+            entity_id: binary_sensor.msp430_gate_controller_gate_moving
+            state: "off"
+            for: "00:00:03"
+          - alias: Gate controller not in fault lockout
+            condition: state
+            entity_id: binary_sensor.msp430_gate_controller_gate_lockout
+            state: "off"
+        sequence:
+          - alias: After a beam vehicle_pass, give the car 10 s to clear the swing arc
+            if:
+              - condition: trigger
+                id: Beam_Event
+            then:
+              - delay: "00:00:10"
+          - alias: SAFETY - swing area and beam clear, gate still stopped, right before pressing
+            condition: and
+            conditions:
+              - condition: state
+                entity_id: binary_sensor.driveway_exit_all_occupancy
+                state: "off"
+                for: "00:00:08"
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_photo_beam_blocked
+                state: "off"
+                for: "00:00:05"
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_moving
+                state: "off"
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+                state: "off"
+              - condition: state
+                entity_id: input_boolean.driveway_gate_hold_open
+                state: "off"
+          - alias: Close the gate
+            action: button.press
+            target:
+              entity_id: button.msp430_gate_controller_gate_close_button
+          - alias: Wait for the gate to start moving (normally about 0.3 s)
+            wait_for_trigger:
+              - trigger: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_moving
+                to: "on"
+            timeout: "00:00:10"
+          - alias: >-
+              If it still hasn't moved (and it's still safe), press once more.
+              No further retries.
+            if:
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_moving
+                state: "off"
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
+                state: "off"
+              - condition: state
+                entity_id: binary_sensor.msp430_gate_controller_gate_photo_beam_blocked
+                state: "off"
+            then:
+              - action: button.press
+                target:
+                  entity_id: button.msp430_gate_controller_gate_close_button
