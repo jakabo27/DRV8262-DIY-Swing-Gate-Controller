@@ -8,6 +8,17 @@ A swing-gate opener I built from scratch to replace a relay-based controller. It
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-MQTT%20discovery-18bcf2?style=flat-square)
 ![License: MIT](https://img.shields.io/badge/license-MIT-555?style=flat-square)
 
+## Engineering Skills & Competencies
+
+| Domain | Technologies & Key Implementations |
+|---|---|
+| **Motor Drive & Power** | TI DRV8262 (Single H-Bridge, 25mΩ, 25kHz PWM), trapezoidal ramp profiling, active short-braking, inrush suppression |
+| **Mixed-Signal Sensing** | Analog current mirror ($I_{PROPI}$), phase-swept ADC sampling (anti-aliasing against PWM), 1024-point 25ms telemetry capture |
+| **Real-Time & Safety Firmware** | TI MSP430F5338 (Bare-metal C), 1ms deterministic control loop, LPM0 low-power scheduling, 3-tier overcurrent protection, fail-safe FSM |
+| **Systems & IoT Architecture** | Dual-MCU distributed architecture, Seeed XIAO ESP32-C3 (ESP-IDF C++), MQTT auto-discovery, WebSockets, change-gated events |
+| **Diagnostics & Bootloaders** | Custom RAM-relocated IAP bootloader (CRC-16 framing), dual-slot ESP32 OTA, live register-level pipeline recovery watchdog |
+| **Testing & Tooling** | Host-side PC unit tests, Python wire-contract AST/regex CI, Saleae logic analyzer debugging, automated CSV telemetry plotting |
+
 ## Relay vs. PWM: same gate, same motor
 
 <!-- 🎬 HERO GIF: when media/video/relay-vs-pwm-stop.gif exists (see "Claude deleteme.md" → Video), uncomment the next line.
@@ -50,7 +61,7 @@ Every step of that motion profile is a runtime setting (`SET_SOFT_END_CLOSE 9500
   <img src="media/hardware/controller-installed.webp" width="560" alt="The finished controller on a 3D-printed mounting plate at the gate post: the DRV8262VEVM with its heatsink on top, and below it a breadboard with the XIAO ESP32-C3, a four-button test board, a 5V supply, a PC817 optocoupler board and terminal blocks for the field wiring">
 </p>
 
-*The finished controller, on a 3D-printed mounting plate at the gate post. The DRV8262VEVM (top) carries the DRV8262 under the heatsink and the MSP430F5338 on the left. The breadboard (bottom) holds the XIAO ESP32-C3 (left), a four-button test board, a 5V supply, a PC817 optocoupler board isolating the field inputs (right), and terminal blocks for the limit switches, photo beam and RF-remote receiver. There's also a [labeled photo of the bench version](media/hardware/breadboard-prototype.png) that shows what each terminal is for.*
+*The finished controller, on a custom 3D-modeled and printed mounting plate (with a cover) at the gate post. The DRV8262VEVM (top) carries the DRV8262 under the heatsink and the MSP430F5338 on the left. The breadboard (bottom) holds the XIAO ESP32-C3 (left), a four-button test board, a 5V supply, a PC817 optocoupler board translating the 12V field inputs down to 3.3V to protect the MCU digital logic (right), and terminal blocks for the limit switches, photo beam and RF-remote receiver. There's also a [labeled photo of the bench version](media/hardware/breadboard-prototype.png) that shows what each terminal is for.*
 
 The base is TI's **DRV8262VEVM** evaluation module, in the DDV package variant: the driver's thermal pad is on *top* of the chip, so the heatsink clips straight onto it instead of the heat going out through the board. The EVM already carries an MSP430F5338, which became the gate's controller. The gate runs on a 12V battery.
 
@@ -65,7 +76,8 @@ The base is TI's **DRV8262VEVM** evaluation module, in the DDV package variant: 
 - **Sleeps between ticks**: a 1ms control loop while moving, 10ms at rest, and the motor driver powered down between moves. The serial console still answers at any time.
 - **25 runtime-tunable parameters**, saved in the MSP430's flash, adjustable from the dashboard.
 - **Pushes events instead of being polled.** A state change reaches Home Assistant in about 0.23s (it used to take 1.4s).
-- **Wireless firmware updates for both chips**, including the MSP430, whose ROM bootloader entry doesn't work on this board. [How →](#the-hard-part-an-msp430-that-wouldnt-enter-its-bootloader)
+- **Silicon errata mitigation (ADC pipeline watchdog).** Live register debugging on the bench revealed an MSP430 Timer_A/ADC pipeline stall condition. The firmware includes an active watchdog that forces a pipeline restart if samples delay >30ms, ensuring overcurrent protection never goes blind while moving.
+- **Wireless firmware updates for both chips**, including the MSP430, whose ROM bootloader entry doesn't work on this board. [How →](#the-hard-part-updating-firmware-from-the-study-bypassing-a-dead-bootloader)
 
 ## Architecture
 
@@ -84,11 +96,11 @@ The split is deliberate. The MSP430 owns everything real-time and everything saf
 
 The ESP32 serves a single-page dashboard. This is it right after an open: live status, and the current and battery voltage the MSP430 recorded during the move, where you can see the launch peak and the current dropping away at the soft end. Further down are the full parameter table with per-row set and reset, a live serial console, and firmware upload for both chips (screenshots in [`esp32-wifi-bridge/`](esp32-wifi-bridge/)).
 
-## The hard part: an MSP430 that wouldn't enter its bootloader
+## The hard part: updating firmware from the study (bypassing a dead bootloader)
 
-MSP430s normally take new firmware through the ROM bootstrap loader: hold `TEST`, pulse `RST`, and the chip listens for a flashing protocol. On this board's MSP430F5338 that entry sequence never works. That was a problem, because the gate is at the end of the driveway and a wired debugger isn't.
+MSP430s normally take new firmware through the ROM bootstrap loader: hold `TEST`, pulse `RST`, and the chip listens for a flashing protocol. On this board's MSP430F5338 that entry sequence never works. That was a problem, because the gate is out in the weather at the end of the driveway, and I wanted to push firmware updates from the comfort of my study.
 
-So the **running gate firmware updates itself**. You drop a new image onto the ESP32's web page. The ESP32 sends `FWUPDATE`, and the MSP430 copies a small updater into RAM, stops the gate application, and takes the image over its normal serial console in CRC-checked frames, acknowledging each one. It rewrites its own flash segment by segment (leaving the saved settings alone) and reboots into the new build. The ESP32 also has the standard BSL entry paths as fallbacks for boards where they do work, and it updates itself over Wi-Fi through a two-slot OTA partition table. Full write-up: [`esp32-wifi-bridge/README.md`](esp32-wifi-bridge/README.md#the-hard-part-flashing-an-msp430-whose-bootloader-doesnt-work).
+So the **running gate firmware updates itself via a custom RAM-resident In-Application Programming (IAP) loader**. You drop a new image onto the ESP32's web page. The ESP32 sends `FWUPDATE`, and the MSP430 copies a small updater into RAM, stops the gate application, and takes the image over its normal serial console in CRC-16 checked frames, acknowledging each one. It rewrites its own flash segment by segment (leaving the saved settings alone) and reboots into the new build. The ESP32 also has the standard BSL entry paths as fallbacks for boards where they do work, and it updates itself over Wi-Fi through a two-slot OTA partition table. Full write-up: [`esp32-wifi-bridge/README.md`](esp32-wifi-bridge/README.md#the-hard-part-flashing-an-msp430-whose-bootloader-doesnt-work).
 
 ## Measured
 
@@ -102,6 +114,13 @@ So the **running gate firmware updates itself**. You drop a new image onto the E
 | Host-side tests | Build the real `beam.c` and the bridge's real parsers on a PC, and check both firmwares agree on every field of the serial protocol ([`tests/`](tests/)) |
 
 Details: [`docs/test-results-2026-09-28.md`](docs/test-results-2026-09-28.md).
+
+## Testing & Verification
+
+A robust test harness was used to validate the embedded logic, utilizing both hardware and software tooling:
+- **Host-side CI**: The `tests/` directory compiles the bare-metal C (e.g. `beam.c`) on a PC host to test against synthetic waveforms (e.g., car + trailer profiles, 20ms glitches, chatter).
+- **Wire-Contract Checks**: Python AST and regex linters verify that the ESP32 bridge parsers strictly match the MSP430 event emissions so there is zero protocol drift between the two codebases.
+- **Hardware Debugging**: Used a Saleae logic analyzer on the bench to precisely time the PWM slewing, optocoupler input delay, and the dual-MCU UART sync.
 
 ## Repository layout
 
