@@ -1,0 +1,274 @@
+<!doctype html>
+<!--
+  Source for media/diagrams/architecture-{light,dark}.svg.
+
+  Hand-drawn boxes and arrows come from rough.js. Text is set in Patrick Hand and
+  Architects Daughter (both SIL Open Font License, fetched from the Google Fonts
+  repo) and converted to outlines with opentype.js, so the SVG looks the same
+  everywhere without needing the fonts installed.
+
+  To re-render: python server.py 8766, open http://localhost:8766/, and both
+  SVGs are written to out/. Copy them to media/diagrams/.
+-->
+<html><head><meta charset="utf-8"><title>arch diagram</title>
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<style>body{margin:0;background:#777;font-family:sans-serif} svg{display:block;margin:12px auto} #status{color:#fff;padding:6px}</style>
+</head><body>
+<div id="status">loading…</div>
+<div id="host"></div>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const FONT_URLS = {
+  hand: ['https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/patrickhand/PatrickHand-Regular.ttf',
+         'https://raw.githubusercontent.com/google/fonts/main/ofl/patrickhand/PatrickHand-Regular.ttf'],
+  head: ['https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/architectsdaughter/ArchitectsDaughter-Regular.ttf',
+         'https://raw.githubusercontent.com/google/fonts/main/ofl/architectsdaughter/ArchitectsDaughter-Regular.ttf'],
+};
+async function loadFont(urls) {
+  for (const u of urls) {
+    try { const r = await fetch(u); if (!r.ok) continue; return opentype.parse(await r.arrayBuffer()); } catch (e) {}
+  }
+  throw new Error('font failed: ' + urls[0]);
+}
+
+const THEMES = {
+  light: {paper:'#fbfaf6', ink:'#2b2b2b', muted:'#66655f', teal:'#4fa9a6', orange:'#ee9a45', rose:'#c85f7c',
+          gray:'#a3a39c', box:'#ffffff', hach:0.55, mark:0.45},
+  dark:  {paper:'#1c1c1b', ink:'#ecebe6', muted:'#b4b3ac', teal:'#4fa3a0', orange:'#dd8d3d', rose:'#d27089',
+          gray:'#8b8b85', box:'#262625', hach:0.40, mark:0.55},
+};
+
+const W = 920, H = 1080;
+let fonts, svg, rc, C, seed;
+const S = () => ++seed;
+
+function add(node, opacity) { if (opacity != null) node.setAttribute('opacity', opacity); svg.appendChild(node); return node; }
+
+function text(str, x, y, o = {}) {
+  const f = fonts[o.font || 'hand'], size = o.size || 21;
+  const w = f.getAdvanceWidth(str, size);
+  const x0 = o.anchor === 'middle' ? x - w / 2 : o.anchor === 'end' ? x - w : x;
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', f.getPath(str, x0, y, size).toPathData(1));
+  p.setAttribute('fill', o.color || C.ink);
+  svg.appendChild(p);
+  return {x0, w};
+}
+
+// marker highlight behind a piece of text (drawn first, text drawn after)
+function highlight(x, y, w, h, color, op) {
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.4, stroke:'none', fill:color, fillStyle:'solid'}), op ?? C.mark);
+}
+
+function box(x, y, w, h, stripe) {
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.1, bowing:1.2, stroke:C.ink, strokeWidth:1.8, fill:C.box, fillStyle:'solid'}));
+  if (stripe) highlight(x + 6, y + h - 13, w - 12, 8, stripe);
+}
+
+function headingPatch(str, x, y, size) {
+  const w = fonts.head.getAdvanceWidth(str, size);
+  add(rc.rectangle(x - 8, y - size - 2, w + 16, size + 12, {seed:S(), roughness:0.9, stroke:'none', fill:C.paper, fillStyle:'solid'}));
+  text(str, x, y, {font:'head', size});
+  return w;
+}
+function note(str, x, y) {
+  const w = fonts.hand.getAdvanceWidth(str, 19.5);
+  add(rc.rectangle(x - 6, y - 19, w + 12, 26, {seed:S(), roughness:0.9, stroke:'none', fill:C.paper, fillStyle:'solid'}));
+  highlight(x - 6, y - 18, w + 12, 24, C.rose, C.mark * 0.7);
+  text(str, x, y, {size:19.5});
+}
+function container(x, y, w, h, color) {
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.3, stroke:'none', fill:color, fillStyle:'hachure',
+                               hachureGap:10, fillWeight:1.3, hachureAngle:-41}), C.hach);
+  add(rc.rectangle(x, y, w, h, {seed:S(), roughness:1.4, bowing:1.5, stroke:C.ink, strokeWidth:2.2}));
+}
+
+function head(x, y, ang) {
+  const L = 13, a = 0.47;
+  add(rc.linearPath([[x - L * Math.cos(ang - a), y - L * Math.sin(ang - a)], [x, y],
+                     [x - L * Math.cos(ang + a), y - L * Math.sin(ang + a)]],
+                    {seed:S(), roughness:0.7, stroke:C.ink, strokeWidth:1.9}));
+}
+
+function arrow(x1, y1, x2, y2, o = {}) {
+  if (o.ctrl) {
+    const [cx, cy] = o.ctrl;
+    add(rc.path(`M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, {seed:S(), roughness:0.8, stroke:C.ink, strokeWidth:1.8}));
+    head(x2, y2, Math.atan2(y2 - cy, x2 - cx));
+    if (o.both) head(x1, y1, Math.atan2(y1 - cy, x1 - cx));
+  } else {
+    add(rc.line(x1, y1, x2, y2, {seed:S(), roughness:0.8, stroke:C.ink, strokeWidth:1.8}));
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    head(x2, y2, ang);
+    if (o.both) head(x1, y1, ang + Math.PI);
+  }
+}
+
+// ---- small icons ---------------------------------------------------------
+const ln = {roughness:0.9, stroke:null, strokeWidth:1.6};
+function st(extra) { return Object.assign({seed:S(), roughness:0.9, stroke:C.ink, strokeWidth:1.6}, extra || {}); }
+function iconLaptop(x, y) {
+  add(rc.rectangle(x, y, 34, 22, st({fill:C.teal, fillStyle:'hachure', hachureGap:5})));
+  add(rc.linearPath([[x - 6, y + 27], [x + 40, y + 27]], st()));
+  add(rc.rectangle(x + 44, y + 2, 13, 25, st({fill:C.box, fillStyle:'solid'})));
+}
+function iconHouse(x, y) {
+  add(rc.polygon([[x, y + 15], [x + 18, y], [x + 36, y + 15]], st()));
+  add(rc.rectangle(x + 6, y + 15, 24, 17, st({fill:C.teal, fillStyle:'hachure', hachureGap:5})));
+}
+function iconChip(x, y) {
+  add(rc.rectangle(x, y, 26, 26, st({fill:C.rose, fillStyle:'hachure', hachureGap:4})));
+  for (let i = 0; i < 3; i++) {
+    const o = 6 + i * 7;
+    add(rc.line(x - 7, y + o, x, y + o, st({strokeWidth:1.3})));
+    add(rc.line(x + 26, y + o, x + 33, y + o, st({strokeWidth:1.3})));
+  }
+}
+function iconGate(x, y) {
+  add(rc.rectangle(x, y, 44, 28, st()));
+  for (let i = 1; i < 4; i++) add(rc.line(x + i * 11, y, x + i * 11, y + 28, st({strokeWidth:1.3})));
+  add(rc.line(x, y + 28, x + 44, y, st({strokeWidth:1.3})));
+}
+function iconBattery(x, y) {
+  add(rc.rectangle(x, y, 40, 22, st({fill:C.rose, fillStyle:'hachure', hachureGap:5})));
+  add(rc.rectangle(x + 40, y + 7, 5, 8, st({fill:C.ink, fillStyle:'solid'})));
+}
+function cylinder(cx, top, w, bodyH) {
+  const rx = w / 2, ry = 10;
+  add(rc.rectangle(cx - rx, top, w, bodyH, {seed:S(), roughness:0.6, stroke:'none', fill:C.box, fillStyle:'solid'}));
+  add(rc.ellipse(cx, top + bodyH, w, ry * 2, st({fill:C.box, fillStyle:'solid', strokeWidth:1.8})));
+  add(rc.rectangle(cx - rx + 2, top, w - 4, bodyH, {seed:S(), roughness:0.6, stroke:'none', fill:C.box, fillStyle:'solid'}));
+  add(rc.line(cx - rx, top, cx - rx, top + bodyH, st({strokeWidth:1.8})));
+  add(rc.line(cx + rx, top, cx + rx, top + bodyH, st({strokeWidth:1.8})));
+  add(rc.ellipse(cx, top, w, ry * 2, st({fill:C.gray, fillStyle:'hachure', hachureGap:5, strokeWidth:1.8})));
+}
+
+// two-line centered label inside a box
+function label(cx, y, title, sub, sub2) {
+  text(title, cx, y, {size:23, anchor:'middle'});
+  if (sub) text(sub, cx, y + 26, {size:18.5, anchor:'middle', color:C.muted});
+  if (sub2) text(sub2, cx, y + 48, {size:18.5, anchor:'middle', color:C.muted});
+}
+
+function draw(theme) {
+  C = THEMES[theme]; seed = 0;
+  svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('xmlns', NS);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('role', 'img');
+  const title = document.createElementNS(NS, 'title');
+  title.textContent = 'How the DRV8262 swing gate controller fits together';
+  const desc = document.createElementNS(NS, 'desc');
+  desc.textContent = 'A phone or laptop browser talks HTTP and WebSocket to the ESP32-C3 Wi-Fi bridge, and Home Assistant talks to it through an MQTT broker. ' +
+    'The bridge (web dashboard, wireless flasher, MQTT) owns the one UART link to the MSP430F5338 at 115200 8N1. ' +
+    'The MSP430 runs the state machine and all safety logic, the motion profile (25kHz PWM) and current and voltage sensing, and works with no network. ' +
+    'It reads the limit switches, photo beam and RF remote, drives the DRV8262 H-bridge with PWM on IN1 and IN2, and reads the motor current back through IPROPI. ' +
+    'The DRV8262 drives the gate actuator from the 12V battery.';
+  svg.append(title, desc);
+  rc = rough.svg(svg);
+
+  add(rc.rectangle(0, 0, W, H, {seed:S(), roughness:0, stroke:'none', fill:C.paper, fillStyle:'solid'}));
+
+  // title
+  const t = fonts.head.getAdvanceWidth('HOW IT FITS TOGETHER', 30);
+  highlight(38, 44, t + 8, 14, C.rose, C.mark * 0.8);
+  text('HOW IT FITS TOGETHER', 42, 56, {font:'head', size:30});
+
+  // ---- row A: clients ------------------------------------------------------
+  box(45, 92, 280, 86, C.gray);
+  iconLaptop(64, 118);
+  text('Phone or laptop', 132, 128, {size:23});
+  text('any web browser', 132, 154, {size:18.5, color:C.muted});
+
+  box(595, 92, 280, 86, C.gray);
+  iconHouse(616, 116);
+  text('Home Assistant', 668, 128, {size:23});
+  text('29 entities + automations', 668, 154, {size:18.5, color:C.muted});
+
+  cylinder(735, 222, 190, 52);
+  text('MQTT broker', 735, 260, {size:21, anchor:'middle'});
+
+  // ---- ESP32 bridge --------------------------------------------------------
+  container(36, 318, 848, 222, C.teal);
+  const h1 = headingPatch('ESP32-C3 WI-FI BRIDGE', 58, 356, 24);
+  note('optional: the gate runs without it', 58 + h1 + 34, 356);
+
+  box(60, 378, 250, 86, C.teal);   label(185, 412, 'Web dashboard', 'controls, live chart, settings');
+  box(335, 378, 250, 86, C.teal);  label(460, 412, 'Wireless flasher', 'updates MSP430 + ESP32');
+  box(610, 378, 250, 86, C.teal);  label(735, 412, 'MQTT + Home Assistant', 'pushes events in ~0.2s');
+  box(60, 484, 800, 38);
+  text('one UART, one owner: console relay + event parser + flasher share it', 460, 509, {size:18.5, anchor:'middle', color:C.muted});
+
+  arrow(185, 178, 185, 318, {both:true});
+  text('HTTP +', 199, 240, {size:18.5, color:C.muted});
+  text('WebSocket', 199, 262, {size:18.5, color:C.muted});
+  arrow(735, 178, 735, 212, {both:true});
+  arrow(735, 286, 735, 318, {both:true});
+
+  // ---- UART link -----------------------------------------------------------
+  arrow(460, 540, 460, 614, {both:true});
+  text('UART 115200 8N1', 476, 574, {size:20});
+  text('(9600 8E1 in BSL mode)', 476, 597, {size:17, color:C.muted});
+
+  // ---- MSP430 --------------------------------------------------------------
+  container(36, 614, 848, 178, C.orange);
+  const h2 = headingPatch('MSP430F5338 GATE CONTROLLER', 58, 652, 24);
+  note('in charge: safety needs no network', 58 + h2 + 34, 652);
+
+  box(60, 674, 250, 90, C.orange);   label(185, 708, 'State machine', '+ all the safety logic');
+  box(335, 674, 250, 90, C.orange);  label(460, 708, 'Motion profile', '25kHz PWM, soft start/stop');
+  box(610, 674, 250, 90, C.orange);  label(735, 708, 'Current + voltage', 'IPROPI, 25ms capture');
+
+  // ---- hardware row --------------------------------------------------------
+  box(60, 858, 250, 108, C.gray);
+  label(185, 890, 'Inputs', 'limit switches, photo beam,', 'RF remote, buttons');
+  box(335, 858, 250, 108, C.rose);
+  iconChip(355, 880);
+  text('DRV8262', 402, 892, {size:23});
+  text('H-bridge', 402, 916, {size:23});
+  text('switches the motor', 402, 942, {size:18.5, color:C.muted});
+  box(610, 858, 250, 108, C.rose);
+  iconGate(628, 880);
+  text('Gate actuator', 688, 896, {size:23});
+  text('12V DC motor arm', 688, 922, {size:18.5, color:C.muted});
+
+  arrow(185, 858, 185, 766);
+  arrow(460, 766, 460, 856);
+  text('IN1 / IN2', 446, 818, {size:18.5, anchor:'end', color:C.muted});
+  text('PWM', 446, 839, {size:18.5, anchor:'end', color:C.muted});
+  arrow(560, 858, 700, 768, {ctrl:[690, 858]});
+  text('IPROPI:', 700, 818, {size:18.5, color:C.muted});
+  text('current copy', 700, 839, {size:18.5, color:C.muted});
+  arrow(585, 912, 608, 912);
+
+  // battery
+  arrow(460, 1008, 460, 968);
+  iconBattery(372, 1028);
+  text('12V battery', 430, 1046, {size:23});
+  text('powers everything', 545, 1046, {size:18.5, color:C.muted});
+
+  document.getElementById('host').appendChild(svg);
+  return svg;
+}
+
+(async () => {
+  try {
+    fonts = {hand: await loadFont(FONT_URLS.hand), head: await loadFont(FONT_URLS.head)};
+    const results = [];
+    for (const theme of ['light', 'dark']) {
+      const el = draw(theme);
+      const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(el);
+      const r = await fetch('/save?name=architecture-' + theme + '.svg', {method:'POST', body:xml});
+      results.push(theme + ': ' + (await r.text()));
+    }
+    document.getElementById('status').textContent = 'done - ' + results.join(' | ');
+    window.__done = results;
+  } catch (e) {
+    document.getElementById('status').textContent = 'ERROR ' + e;
+    window.__done = 'ERROR ' + e;
+  }
+})();
+</script>
+</body></html>

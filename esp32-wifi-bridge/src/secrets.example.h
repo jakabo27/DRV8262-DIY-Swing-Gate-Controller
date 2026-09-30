@@ -8,7 +8,7 @@
 #define WIFI_STA_SSID     "your-wifi-ssid"
 #define WIFI_STA_PASS     "your-wifi-password"
 
-// Fallback access point. If WIFI_STA_SSID can't be reached within 30 s the
+// Fallback access point. If WIFI_STA_SSID can't be reached within 30s the
 // bridge also starts its own AP at 192.168.4.1, and keeps retrying the home
 // network in the background. WPA2 needs a password of at least 8 characters.
 #define WIFI_AP_SSID      "MSP430_Flasher"

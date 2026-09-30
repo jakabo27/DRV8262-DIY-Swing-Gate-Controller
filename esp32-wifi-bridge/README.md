@@ -8,10 +8,9 @@ A Seeed Studio XIAO ESP32-C3 wired to the gate controller's serial port. It give
 
 It's one ESP-IDF C++ file ([`src/main.cpp`](src/main.cpp), ~4k lines including the embedded web page), built with PlatformIO.
 
-<!-- 📸 SCREENSHOT: full web dashboard, top of page (Gate Controls + Gate Status tiles + Last Move chart).
-     Browser at ~1200 px wide, gate idle at the CLOSED limit, right after a move so the chart has data.
-     Save as media/screenshots/web-dashboard.png -->
-![Web dashboard](../media/screenshots/web-dashboard.png)
+<p align="center">
+  <img src="../media/screenshots/web-dashboard.png" width="720" alt="Web dashboard after an open: gate controls, status tiles, and the last move's motor current and supply voltage">
+</p>
 
 ## Dashboard tour
 
@@ -25,10 +24,12 @@ It's one ESP-IDF C++ file ([`src/main.cpp`](src/main.cpp), ~4k lines including t
 | **Firmware** | Upload a TI-TXT image to reflash the MSP430, or a `firmware.bin` to update the ESP32 itself |
 | **ESP32 Status** | Wi-Fi network, RSSI, IP, uptime, free heap, chip temperature |
 
-<!-- 📸 SCREENSHOT: the Last Move chart card on its own, after a normal close. Crop tight to the card.
-     Save as media/screenshots/web-last-move-chart.png -->
-<!-- 📸 SCREENSHOT: Gate Settings table with one group expanded (e.g. "Soft end-of-travel").
-     Save as media/screenshots/web-settings.png -->
+<p>
+  <img src="../media/screenshots/web-settings.png" width="49%" alt="Gate Settings: every tunable parameter grouped by function (travel and timing, PWM duty, soft end-of-travel, obstacle and over-current, stall and lockout), with current value, default, unit and per-row set and reset">
+  <img src="../media/screenshots/web-console-firmware.png" width="49%" alt="Serial console showing a STATUS reply, the TI-TXT firmware upload for the MSP430, the ESP32 OTA upload, and hardware actions (BSL entry, reboot, time sync)">
+</p>
+
+*Left: the settings table, where yellow marks a value that differs from its default. Right: the live serial console, the two firmware uploads, and the hardware actions.*
 
 ## The hard part: flashing an MSP430 whose bootloader doesn't work
 
@@ -74,7 +75,7 @@ Plus a common ground between the two boards.
    Or upload `.pio/build/seeed_xiao_esp32c3/firmware.bin` from the dashboard's Firmware card.
 4. **Home Assistant** finds the device on its own once the broker settings are right. See [`../home-assistant/`](../home-assistant/).
 
-If the home Wi-Fi can't be reached within 30 s, the bridge also starts its own access point (`MSP430_Flasher`, dashboard at `http://192.168.4.1/`) and keeps retrying the home network in the background. It's never stuck in fallback mode.
+If the home Wi-Fi can't be reached within 30s, the bridge also starts its own access point (`MSP430_Flasher`, dashboard at `http://192.168.4.1/`) and keeps retrying the home network in the background. It's never stuck in fallback mode.
 
 The ESP-IDF 6.x build pulls `espressif/mqtt` as a managed component on the first build (needs internet once).
 
@@ -93,7 +94,7 @@ MQTT topics and entities are listed in [`../home-assistant/README.md`](../home-a
 
 ## Other details
 
-- **NTP time sync.** The bridge sends `TIME:<epoch>` to the MSP430 at boot and every 30 min, so the gate's log lines carry real timestamps.
-- **Legacy fallback.** If the MSP430 is running an older build that doesn't push events (detected from its `STATUS` reply), the bridge falls back to polling every 2 s, so updating the two boards in either order won't break Home Assistant.
+- **NTP time sync.** The bridge sends `TIME:<epoch>` to the MSP430 at boot and every 30min, so the gate's log lines carry real timestamps.
+- **Legacy fallback.** If the MSP430 is running an older build that doesn't push events (detected from its `STATUS` reply), the bridge falls back to polling every 2s, so updating the two boards in either order won't break Home Assistant.
 - **Retained vs. not.** State topics are retained so Home Assistant has correct values right after a restart. The beam-activity *event* topic is not, since a retained event would replay on every restart and re-fire automations.
-- **Diagnostics are change-gated.** RSSI (to the nearest 5 dBm), free heap and chip temperature publish only when they change, so they don't flood Home Assistant's history.
+- **Diagnostics are change-gated.** RSSI (to the nearest 5dBm), free heap and chip temperature publish only when they change, so they don't flood Home Assistant's history.

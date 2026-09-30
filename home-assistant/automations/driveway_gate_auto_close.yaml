@@ -2,7 +2,7 @@
 # Driveway Gate - Auto Close
 #
 # Closes the gate as soon as it isn't needed:
-#   - the photo beam classified a vehicle_pass (then a 10 s wait so the car
+#   - the photo beam classified a vehicle_pass (then a 10s wait so the car
 #     clears the swing arc - a camera can't see the gate end of the driveway
 #     at night, the beam can), or
 #   - the camera zone over the swing arc went busy and then clear, or
@@ -10,7 +10,7 @@
 #   - a hard 10-minute cap.
 #
 # Every close requires, right before the button press: gate stopped, photo
-# beam clear for 5 s, camera zone clear for 8 s, hold-open off, no lockout.
+# beam clear for 5s, camera zone clear for 8s, hold-open off, no lockout.
 # The gate firmware is still the last line of defense - it refuses CLOSE while
 # the beam is broken and reverses on a beam break or over-current while
 # closing - but this automation shouldn't ever lean on that.
@@ -26,9 +26,9 @@
 alias: Driveway Gate - Auto Close
 description: >-
   Closes the gate as soon as it isn't needed. A car went through (beam
-  vehicle_pass, then a 10 s swing-arc wait; or the camera's gate zone
+  vehicle_pass, then a 10s swing-arc wait; or the camera's gate zone
   cleared), or it's been open 3+ min with nobody driving in. Always requires
-  the gate stopped, beam clear and gate zone clear. Hard cap: 10 min. The
+  the gate stopped, beam clear and gate zone clear. Hard cap: 10min. The
   hold-open toggle pauses it and resets itself when the gate closes. Position
   comes from the limit switches, so a gate stopped part-way still counts as
   open.
@@ -76,7 +76,7 @@ triggers:
     zone: zone.gate_approach
     event: leave
     id: Timeout
-  - alias: Hard cap - open 10 min
+  - alias: Hard cap - open 10min
     trigger: state
     entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
     to: "off"
@@ -185,7 +185,7 @@ actions:
             condition: state
             entity_id: binary_sensor.msp430_gate_controller_gate_closed_limit
             state: "off"
-          - alias: GUARD - gate stopped (fully open or stopped part-way) for 3 s
+          - alias: GUARD - gate stopped (fully open or stopped part-way) for 3s
             condition: state
             entity_id: binary_sensor.msp430_gate_controller_gate_moving
             state: "off"
@@ -195,7 +195,7 @@ actions:
             entity_id: binary_sensor.msp430_gate_controller_gate_lockout
             state: "off"
         sequence:
-          - alias: After a beam vehicle_pass, give the car 10 s to clear the swing arc
+          - alias: After a beam vehicle_pass, give the car 10s to clear the swing arc
             if:
               - condition: trigger
                 id: Beam_Event
@@ -225,7 +225,7 @@ actions:
             action: button.press
             target:
               entity_id: button.msp430_gate_controller_gate_close_button
-          - alias: Wait for the gate to start moving (normally about 0.3 s)
+          - alias: Wait for the gate to start moving (normally about 0.3s)
             wait_for_trigger:
               - trigger: state
                 entity_id: binary_sensor.msp430_gate_controller_gate_moving

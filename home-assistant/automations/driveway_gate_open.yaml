@@ -25,10 +25,10 @@
 #   cover.garage_door
 #
 # Prerequisites (create in the UI):
-#   zone.gate_approach     passive zone, ~900 m radius, centered on home. At
-#                          typical street speeds that is 40-130 s of warning,
-#                          enough for a ~14 s gate to be fully open on arrival.
-#   zone.in_neighborhood   a smaller (~400 m) zone - re-opens the gate if the
+#   zone.gate_approach     passive zone, ~900m radius, centered on home. At
+#                          typical street speeds that is 40-130s of warning,
+#                          enough for a ~14s gate to be fully open on arrival.
+#   zone.in_neighborhood   a smaller (~400m) zone - re-opens the gate if the
 #                          first open timed out while you were stopped nearby.
 #
 # The binary_sensor/button/event entities named msp430_gate_controller_* are
@@ -36,7 +36,7 @@
 # =====================================================================
 alias: Driveway Gate - Open
 description: >-
-  Opens the gate for a household member arriving by car (passive ~900 m Gate
+  Opens the gate for a household member arriving by car (passive ~900m Gate
   Approach zone, plus a smaller neighborhood zone as a re-open backup) and for
   a car leaving from inside (Frigate driveway zones). Opens the garage once
   the arriving car is seen inside (camera or photo beam). Never presses a
@@ -161,7 +161,7 @@ actions:
             action: button.press
             target:
               entity_id: button.msp430_gate_controller_gate_open_button
-          - alias: Wait for the arriving car inside (camera or photo beam), max 3 min
+          - alias: Wait for the arriving car inside (camera or photo beam), max 3min
             wait_for_trigger:
               - trigger: state
                 entity_id:
@@ -200,7 +200,7 @@ actions:
           - condition: trigger
             id: Exit_Car
           - alias: >-
-              GUARD - gate has been stopped for 30 s and isn't fully open (so a
+              GUARD - gate has been stopped for 30s and isn't fully open (so a
               car that just came in can't re-open it while it closes)
             condition: state
             entity_id: binary_sensor.msp430_gate_controller_gate_moving
@@ -209,7 +209,7 @@ actions:
           - condition: state
             entity_id: binary_sensor.msp430_gate_controller_gate_open_limit
             state: "off"
-          - alias: Someone has been home at least 10 min (it's a departure, not an arrival)
+          - alias: Someone has been home at least 10min (it's a departure, not an arrival)
             condition: or
             conditions:
               - condition: state

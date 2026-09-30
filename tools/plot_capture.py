@@ -1,7 +1,7 @@
 """Turn a per-move capture from the gate controller into an annotated SVG.
 
 At the end of every move the MSP430 dumps what it recorded (motor current and
-supply voltage every 25 ms) between CAP_BEGIN and CAP_END lines on its console.
+supply voltage every 25ms) between CAP_BEGIN and CAP_END lines on its console.
 Save the console to a text file from the bridge's web UI ("Download log"), then:
 
     python tools/plot_capture.py --from-log console.txt --csv media/data/move.csv
@@ -126,16 +126,16 @@ def build_svg(rows, a, theme):
         'font-family="system-ui, -apple-system, \'Segoe UI\', sans-serif" role="img" '
         'aria-labelledby="t d">' % (W, H, W, H))
     add('<title id="t">Motor current and commanded duty cycle during one real gate close</title>')
-    add('<desc id="d">Current peaks at %s A as the motor launches at %d%% duty, settles near '
-        '2.5 to 3 A at full speed, then drops to about 1 A when the firmware eases the duty to '
-        '%d%% at %s s, so the gate reaches the closed limit slowly and is then held by a 1 s '
+    add('<desc id="d">Current peaks at %sA as the motor launches at %d%% duty, settles near '
+        '2.5 to 3A at full speed, then drops to about 1A when the firmware eases the duty to '
+        '%d%% at %ss, so the gate reaches the closed limit slowly and is then held by a 1s '
         'short-brake. A relay drives 100%% the whole way and cuts off at the limit.</desc>'
         % (fmt(max(amps)), a.ramp_start, a.soft_end_duty, fmt(soft_s)))
     add('<rect width="%d" height="%d" rx="12" fill="%s"/>' % (W, H, c["surface"]))
 
     # Title
     add(text(L, 30, "One real close, recorded by the controller itself", 16, c["ink"], weight=600))
-    add(text(L, 50, "Motor current sampled every 25 ms, and the PWM duty cycle the firmware "
+    add(text(L, 50, "Motor current sampled every 25ms, and the PWM duty cycle the firmware "
                     "commanded over the same move", 12.5))
 
     # Phase bands + markers
@@ -170,7 +170,7 @@ def build_svg(rows, a, theme):
     px, py = X(t[pk]), YA(amps[pk])
     add('<circle cx="%.1f" cy="%.1f" r="4.5" fill="%s" stroke="%s" stroke-width="2"/>'
         % (px, py, c["pwm"], c["surface"]))
-    add(text(px + 12, YA(8.2), '<tspan font-weight="600" fill="%s">%s A</tspan> breakaway peak '
+    add(text(px + 12, YA(8.2), '<tspan font-weight="600" fill="%s">%sA</tspan> breakaway peak '
              'at launch (%d%% duty, not 100%%)' % (c["ink"], fmt(amps[pk]), a.ramp_start)))
 
     # soft-end dip
@@ -208,7 +208,7 @@ def build_svg(rows, a, theme):
             % (" ".join("%.1f,%.1f" % (X(s), YB(v)) for s, v in series), color))
     mid = X((soft_s + 1.0 + stop_t) / 2)
     add(text(mid, YB(100) + 15, "relay: full power, then off at the limit", 11.5, anchor="middle"))
-    add(text(mid, YB(a.soft_end_duty) + 15, "PWM: %d%%, then a 1 s short-brake" % a.soft_end_duty,
+    add(text(mid, YB(a.soft_end_duty) + 15, "PWM: %d%%, then a 1s short-brake" % a.soft_end_duty,
              11.5, anchor="middle"))
     add(text(X(0) + 8, YB(a.ramp_start) + 15, "launch at %d%%" % a.ramp_start, 11.5))
 
